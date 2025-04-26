@@ -2,7 +2,7 @@ package com.example.podometro;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -66,14 +66,6 @@ public class MainActivity extends AppCompatActivity {
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 100);
-        } else {
-            getLocationAndWeather();
-        }
-
         sensorListener = sensorListener1;
 
         sensorManager=(SensorManager) getSystemService(Context.SENSOR_SERVICE);
@@ -87,9 +79,14 @@ public class MainActivity extends AppCompatActivity {
         progressBar = findViewById(R.id.loader);
 
         botonIniciar.setOnClickListener(v -> {
-            validarClima();
+            verificarPermisosYObtenerClima();
         });
-        botonParar.setOnClickListener(v -> run= false);
+        botonParar.setOnClickListener(v ->{
+            numSteps= 0;
+            textViewSteps.setText("");
+            run = false;
+            textViewCiudad.setText("No se ha iniciado el conteo de pasos.");
+        });
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
@@ -98,7 +95,6 @@ public class MainActivity extends AppCompatActivity {
         botonConsultar.setOnClickListener(view -> {
             mostrarBuscador();
         });
-
     }
 
     protected void onResume(){
@@ -135,6 +131,21 @@ public class MainActivity extends AppCompatActivity {
         public void onAccuracyChanged(Sensor sensor, int accuracy) {}
     };
 
+    private void verificarPermisosYObtenerClima() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED ||
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED) {
+
+            // Ya tiene permiso → continúa con la ubicación
+            obtenerLocalizacionYClimaLocal();
+        } else {
+            // No tiene permisos → solicitarlos
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 100);
+        }
+    }
+
     private void mostrarLoader() {
         progressBar.setVisibility(View.VISIBLE);
     }
@@ -161,8 +172,8 @@ public class MainActivity extends AppCompatActivity {
         builder.show();
     }
 
-    private void getLocationAndWeather() {
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+    private void obtenerLocalizacionYClimaLocal() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return;
         }
         fusedLocationClient.getLastLocation()
@@ -207,7 +218,7 @@ public class MainActivity extends AppCompatActivity {
 
                     textViewCiudad.setText("Ciudad: " + ciudad + " | " + temperatura + "°C | " + clima + " | ID: " + data.weather.get(0).id);
                     Log.d("CLIMA", "Ciudad: " + ciudad + " | " + temperatura + "°C | " + clima + " | ID: " + data.weather.get(0).id);
-
+                    validarClima();
                 } else {
                     ocultarLoader();
                     textViewCiudad.setText("Respuesta no exitosa del api.");
@@ -267,7 +278,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void validarClima(){
-        if (idClima >= 800 && temperatura > 20 ){
+        if (idClima >= 800 && temperatura > 10 ){
             mostrarAlerta(true);
         } else if (idClima >= 200 && idClima <= 781){
             mostrarAlerta(false);
@@ -291,11 +302,13 @@ public class MainActivity extends AppCompatActivity {
             new AlertDialog.Builder(this)
                     .setTitle("Clima")
                     .setMessage("El clima es malo para salir a caminar, hoy es un día de: " + descripcionClima + " y la temperatura es: " + temperatura)
-                    .setPositiveButton("Aceptar", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialogInterface, int i) {
+                    .setNegativeButton("Descartar aviso", ( dialogInterface, i) -> {
+                        numSteps= 0;
+                        textViewSteps.setText("0");
+                        run = false;
+                    })
+                    .setPositiveButton("Aceptar", (dialogInterface, i) -> {
 
-                        }
                     })
                     .show();
         }
@@ -308,11 +321,31 @@ public class MainActivity extends AppCompatActivity {
                                            @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 100 && grantResults.length > 0 &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            getLocationAndWeather();
-        } else {
-            Toast.makeText(this, "Permiso de ubicación denegado", Toast.LENGTH_SHORT).show();
+
+        if (requestCode == 100) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                obtenerLocalizacionYClimaLocal();
+            } else {
+                // Verificar si el usuario marcó "No volver a preguntar"
+                if (!ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
+                    // Mostrar diálogo para dirigir a configuración
+                    new AlertDialog.Builder(this)
+                            .setTitle("Permiso requerido")
+                            .setMessage("Debes habilitar el permiso de ubicación manualmente desde Configuración")
+                            .setPositiveButton("Ir a configuración", (dialog, which) -> {
+                                // Intent para abrir ajustes de la app
+                                Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                                startActivity(intent);
+                            })
+                            .setNegativeButton("Cancelar", null)
+                            .show();
+                } else {
+                    // Volver a pedir el permiso
+                    ActivityCompat.requestPermissions(this,
+                            new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 100);
+                }
+            }
         }
     }
 }
