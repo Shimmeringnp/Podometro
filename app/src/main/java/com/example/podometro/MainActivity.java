@@ -278,11 +278,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void validarClima(){
-        if (idClima >= 800 && temperatura > 10 ){
+        if (idClima >= 800 && temperatura > 10){
             mostrarAlerta(true);
-        } else if (idClima >= 200 && idClima <= 781){
-            mostrarAlerta(false);
-        }  else {
+        } else {
             mostrarAlerta(false);
         }
     }
@@ -307,9 +305,7 @@ public class MainActivity extends AppCompatActivity {
                         textViewSteps.setText("0");
                         run = false;
                     })
-                    .setPositiveButton("Aceptar", (dialogInterface, i) -> {
-
-                    })
+                    .setPositiveButton("Aceptar", null)
                     .show();
         }
 
